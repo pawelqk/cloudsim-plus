@@ -20,9 +20,8 @@ import java.util.List;
  * VmSchedulerSpaceShared is a VMM allocation policy that allocates one or more
  * PEs from a host to a Virtual Machine Monitor (VMM), and doesn't allow sharing
  * of PEs. The allocated PEs will be used until the VM finishes running. If
- * there is no enough free PEs as required by a VM, or whether the available PEs
- * doesn't have enough capacity, the allocation fails. In the case of fail, no
- * PE is allocated to the requesting VM.
+ * the available PEs don't have enough capacity, the allocation fails.
+ * In the case of fail, no PE is allocated to the requesting VM.
  *
  * @author Rodrigo N. Calheiros
  * @author Anton Beloglazov
@@ -68,13 +67,14 @@ public class VmSchedulerSpaceShared extends VmSchedulerAbstract {
             return getHost().getWorkingPeList();
         }
 
-        final List<Pe> freePeList = getHost().getFreePeList();
+        final List<Pe> availablePes = getHost().getWorkingPeList();
         final List<Pe> selectedPes = new ArrayList<>();
-        if(freePeList.isEmpty()){
+
+        if (availablePes.isEmpty()) {
             return selectedPes;
         }
 
-        final Iterator<Pe> peIterator = freePeList.iterator();
+        final Iterator<Pe> peIterator = availablePes.iterator();
         Pe pe = peIterator.next();
         for (final double mips : requestedMips) {
             if (mips <= pe.getCapacity()) {
@@ -92,7 +92,7 @@ public class VmSchedulerSpaceShared extends VmSchedulerAbstract {
     @Override
     public boolean allocatePesForVmInternal(final Vm vm, final List<Double> requestedMips) {
         final List<Pe> selectedPes = getTotalCapacityToBeAllocatedToVm(requestedMips);
-        if(selectedPes.size() < requestedMips.size()){
+        if (selectedPes.size() < requestedMips.size()) {
             return false;
         }
 
