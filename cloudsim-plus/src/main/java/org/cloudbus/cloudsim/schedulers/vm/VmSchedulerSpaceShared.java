@@ -12,9 +12,7 @@ import org.cloudbus.cloudsim.vms.Vm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 /**
  * VmSchedulerSpaceShared is a VMM allocation policy that allocates one or more
@@ -30,6 +28,8 @@ import java.util.List;
  */
 public class VmSchedulerSpaceShared extends VmSchedulerAbstract {
     private static final Logger LOGGER = LoggerFactory.getLogger(VmSchedulerSpaceShared.class.getSimpleName());
+
+    private final Map<Vm, List<Double>> waitingVms = new TreeMap();
 
     /**
      * Creates a space-shared VM scheduler.
@@ -89,6 +89,33 @@ public class VmSchedulerSpaceShared extends VmSchedulerAbstract {
         return selectedPes;
     }
 
+    private List<Pe> getFreePes(final List<Double> requestedMips) {
+        if (getHost().getWorkingPesNumber() < requestedMips.size()) {
+            return getHost().getWorkingPeList();
+        }
+
+        final List<Pe> availablePes = getHost().getFreePeList();
+        final List<Pe> selectedPes = new ArrayList<>();
+
+        if (availablePes.isEmpty()) {
+            return selectedPes;
+        }
+
+        final Iterator<Pe> peIterator = availablePes.iterator();
+        Pe pe = peIterator.next();
+        for (final double mips : requestedMips) {
+            if (mips <= pe.getCapacity()) {
+                selectedPes.add(pe);
+                if (!peIterator.hasNext()) {
+                    break;
+                }
+                pe = peIterator.next();
+            }
+        }
+
+        return selectedPes;
+    }
+
     @Override
     public boolean allocatePesForVmInternal(final Vm vm, final List<Double> requestedMips) {
         final List<Pe> selectedPes = getTotalCapacityToBeAllocatedToVm(requestedMips);
@@ -96,12 +123,32 @@ public class VmSchedulerSpaceShared extends VmSchedulerAbstract {
             return false;
         }
 
-        putAllocatedMipsMap(vm, requestedMips);
+        final List<Pe> freePes = getFreePes(requestedMips);
+        LOGGER.info("allocation, selected: {}, free: {}", selectedPes.size(), freePes.size());
+        if (freePes.size() < requestedMips.size()) {
+            putAllocatedMipsMap(vm, Collections.nCopies(requestedMips.size(), 0.0));
+            if (!waitingVms.containsKey(vm)) {
+                waitingVms.put(vm, requestedMips);
+            }
+        } else {
+            putAllocatedMipsMap(vm, requestedMips);
+            if (waitingVms.containsKey(vm)) {
+                waitingVms.remove(vm);
+            }
+        }
+
         return true;
     }
 
     @Override
     protected void deallocatePesFromVmInternal(final Vm vm, final int pesToRemove) {
         removePesFromMap(vm, getAllocatedMipsMap(), pesToRemove);
+        tryToAllocatePesForWaitingVms();
+    }
+
+    private void tryToAllocatePesForWaitingVms() {
+        for (final Map.Entry<Vm, List<Double>> entry : waitingVms.entrySet()) {
+            allocatePesForVm(entry.getKey(), entry.getValue());
+        }
     }
 }
